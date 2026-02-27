@@ -1,4 +1,4 @@
-# Modèles / poids
+# Models / weights
 *.pth
 *.pt
 
@@ -8,3 +8,6 @@ __pycache__/
 
 # IDE
 .idea/
+
+# Outputs
+example_outputs/
