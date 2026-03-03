@@ -1,9 +1,12 @@
 import torch
 from .adp_souple import ADPSouple
+from .wsss import WSSS
 
 
-def get_cbc_model(model_name: str, device: str | torch.device = 'cpu', verbose: bool = False) -> ADPSouple:
+def load(model_name: str, verbose: bool = False) -> torch.nn.Module:
     if model_name == 'ADPSouple':
-        return ADPSouple(device, verbose)
+        return ADPSouple(verbose)
+    elif model_name == 'WSSS':
+        return WSSS(verbose)
     else:
         raise NotImplementedError

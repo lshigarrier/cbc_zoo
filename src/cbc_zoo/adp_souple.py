@@ -6,10 +6,10 @@ from pathlib import Path
 from .utils import log_parameters
 
 
-class ADPSouple:
+class ADPSouple(torch.nn.Module):
 
-    def __init__(self, device: str | torch.device = 'cpu', verbose: bool = False) -> None:
-        self.device = device
+    def __init__(self, verbose: bool = False) -> None:
+        super().__init__()
         self.verbose = verbose
         self.logger = logging.getLogger('ADPSouple')
         self.transform = transforms.Compose([
@@ -19,23 +19,14 @@ class ADPSouple:
         base_dir = Path(__file__).parent
         model_path = base_dir / 'models' / 'my_model_unet_aspp_adam_CE_45_weight_1_e_5_learning_rate_v2.pth'
         self.model = torch.jit.load(model_path)
-        self.model.to(device)
         self.model.eval()
         if verbose:
-            self.logger.info('=' * 70)
-            self.logger.info(f'device: {device}')
             log_parameters(self.model, self.logger)
 
-    def to(self, device: str | torch.device) -> None:
-        self.device = device
-        self.model.to(device)
-
-    def __call__(self, image: torch.Tensor) -> torch.Tensor:
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
         with torch.inference_mode():
-            image = image.to(self.device)
             image = self.transform(image)
             # Add a batch dimension if necessary (models expect [B, C, H, W])
             if image.ndim == 3:
                 image = image.unsqueeze(0)
-
             return self.model(image)  # output shape : B x 3 x H x W
