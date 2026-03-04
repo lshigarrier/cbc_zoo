@@ -18,7 +18,8 @@ class WSSS(torch.nn.Module):
             transforms.Normalize([123.675, 116.28, 103.53], [58.395, 57.12, 57.375])
         ])
         base_dir = Path(__file__).parent
-        model_path = base_dir / 'models' / 'CoSA_LCC_5.pt'
+        model_path = base_dir / 'models' / 'CoSA_LCC_7_final.pt'
+        self.invert_activation = True  # set to True if using CoSA_LCC_7, set to False if using CoSA_LCC_5
         self.model = torch.jit.load(model_path)
         self.model.eval()
         if verbose:
@@ -65,6 +66,11 @@ class WSSS(torch.nn.Module):
 
             # CAM validation
             mix_cam_avg = (cam + cam_aux) / 2
+            if self.invert_activation:
+                # invert activation for RES
+                mix_cam_avg[:, 1] = 1 - mix_cam_avg[:, 1]
+                # invert activation for COS
+                mix_cam_avg[:, 3] = 1 - mix_cam_avg[:, 3]
             cls_label_rep = logits_final.unsqueeze(-1).unsqueeze(-1).repeat([1, 1, h, w])
             valid_cam = cls_label_rep * mix_cam_avg
 

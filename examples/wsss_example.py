@@ -15,35 +15,73 @@ import cbc_zoo as cbc
 logging.basicConfig(level=logging.DEBUG, format='%(name)s:%(message)s')
 
 
-def mask_to_rgba(mask):
+def mask_to_rgba(mask, num_classes=12):
     """
     Args:
         mask: (..., H, W) numpy array with integer values 0, ..., 6
+        num_classes: number of classes
 
     Returns:
         (..., H, W, 4) numpy array uint8 RGBA
     """
-    cmap = np.array([
-        [0, 0, 0, 0],  # 0 (0) → black or transparent (pas de dégradation)
-        [255, 0, 0, 1],  # 1 (1) → red (fissure souple)
-        [0, 255, 0, 1],  # 2 (5) → green (dépôt de gomme)
-        [0, 255, 255, 1],  # 3 (7) → cyan (arrachement rigide)
-        [255, 255, 0, 1],  # 4 (8) → yellow (réparation rigide)
-        [255, 0, 255, 1],  # 5 (10) → magenta (fissure rigide)
-        [0, 0, 255, 1],  # 6 (12) → blue (joint de dalle)
-    ], dtype=np.uint8)
+    if num_classes == 12:
+        cmap = np.array([
+            [0, 0, 0, 0],  # 0 → black or transparent (pas de dégradation)
+            [255, 0, 0, 1],  # 1 → red (fissure souple)
+            [128, 0, 128, 1],  # 2 → purple (réparation souple)
+            [0, 128, 128, 1],  # 3 → teal (arrachement souple)
+            [128, 128, 128, 1],  # 4 → gray (contamination souple)
+            [0, 255, 0, 1],  # 5 → green (dépôt de gomme)
+            [255, 128, 128, 1],  # 6 → salmon (épaufrure avec départ)
+            [0, 255, 255, 1],  # 7 → cyan (arrachement rigide)
+            [255, 255, 0, 1],  # 8 → yellow (réparation rigide)
+            [128, 128, 0, 1],  # 9 → olive (épaufrure sans départ)
+            [255, 0, 255, 1],  # 10 → magenta (fissure rigide)
+            [255, 128, 0, 1],  # 11 → orange (défaut de joint)
+            [0, 0, 255, 1],  # 12 → blue (joint de dalle)
+        ], dtype=np.uint8)
+    elif num_classes == 6:
+        cmap = np.array([
+            [0, 0, 0, 0],  # 0 (0) → black or transparent (pas de dégradation)
+            [255, 0, 0, 1],  # 1 (1) → red (fissure souple)
+            [0, 255, 0, 1],  # 2 (5) → green (dépôt de gomme)
+            [0, 255, 255, 1],  # 3 (7) → cyan (arrachement rigide)
+            [255, 255, 0, 1],  # 4 (8) → yellow (réparation rigide)
+            [255, 0, 255, 1],  # 5 (10) → magenta (fissure rigide)
+            [0, 0, 255, 1],  # 6 (12) → blue (joint de dalle)
+        ], dtype=np.uint8)
+    else:
+        raise NotImplementedError
     return cmap[mask]
 
 
-def index_to_label(idx):
-    labels = [
-        'FIS',
-        'GOM',
-        'ARR',
-        'RER',
-        'FIR',
-        'JOI',
-    ]
+def index_to_label(idx, num_classes=12):
+    if num_classes == 12:
+        labels = [
+            'FIS',
+            'RES',
+            'ARS',
+            'COS',
+            'GOM',
+            'DEP',
+            'ARR',
+            'RER',
+            'EPA',
+            'FIR',
+            'DEF',
+            'JOI',
+        ]
+    elif num_classes == 6:
+        labels = [
+            'FIS',
+            'GOM',
+            'ARR',
+            'RER',
+            'FIR',
+            'JOI',
+        ]
+    else:
+        raise NotImplementedError
     return labels[idx]
 
 
@@ -75,10 +113,11 @@ def process_and_save(images, names, outputs, boxes, output_dir, dataset):
     os.makedirs(output_dir, exist_ok=True)
 
     mix_cam, valid_cam, logits = outputs
-    valid_cam = dataset.stitch(valid_cam, boxes)  # list((6, H, W))
-    mix_cam = dataset.stitch(mix_cam, boxes)  # list((6, H, W))
+    num_classes = valid_cam.shape[1]
+    valid_cam = dataset.stitch(valid_cam, boxes)  # list((num_classes, H, W))
+    mix_cam = dataset.stitch(mix_cam, boxes)  # list((num_classes, H, W))
     batch_size = len(valid_cam)
-    logits = logits.reshape(batch_size, dataset.patch_per_img, -1).amax(dim=1)  # (batch_size, 6)
+    logits = logits.reshape(batch_size, dataset.patch_per_img, -1).amax(dim=1)  # (batch_size, num_classes)
 
     for b in range(batch_size):
         # CAM to label
@@ -88,7 +127,7 @@ def process_and_save(images, names, outputs, boxes, output_dir, dataset):
         mask[cam_value <= bkg_thre] = 0
 
         # Save mask
-        mask = mask_to_rgba(mask.cpu().numpy())
+        mask = mask_to_rgba(mask.cpu().numpy(), num_classes)
         mask_a = mask[:, :, 3:].astype(np.float32)
         mask = mask[:, :, :3].astype(np.float32)
         image = images[b].numpy().transpose(1, 2, 0).astype(np.float32) * (1 - mask_a * 0.5) + mask * (mask_a * 0.5)
@@ -100,7 +139,7 @@ def process_and_save(images, names, outputs, boxes, output_dir, dataset):
         for i, logit in enumerate(logits[b]):
             if logit.item() > 0:
                 cam_rgb = cmap(mix_cam[b][i].cpu().numpy())[:, :, :3] * 255
-                Image.fromarray(cam_rgb.astype(np.uint8)).save(output_dir / f'{names[b]}_CAM_{index_to_label(i)}.png')
+                Image.fromarray(cam_rgb.astype(np.uint8)).save(output_dir / f'{names[b]}_CAM_{index_to_label(i, num_classes)}.png')
 
 
 def main():
