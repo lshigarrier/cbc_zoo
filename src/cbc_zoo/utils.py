@@ -80,7 +80,7 @@ class ImageDataset(Dataset):
 
         return img, name, patches, tuple(boxes)
 
-    def stitch(self, patches: torch.Tensor, boxes: tuple[tuple[int, int, int, int], ...]) -> torch.Tensor:
+    def stitch(self, patches: torch.Tensor, boxes: tuple[tuple[int, int, int, int], ...]) -> list[torch.Tensor]:
         # patches : (num_images * patch_per_img, channels, patch_size, patch_size)
         # boxes : contains (y1, y2, x1, x2) for each patch
         num_patches = patches.shape[0]
@@ -125,9 +125,9 @@ class ImageDataset(Dataset):
 
             # Normalize the accumulated image by the sum of weights (this performs the smooth blending)
             reconstructed = img_acc / weight_acc
-            all_images.append(reconstructed.to(dtype).unsqueeze(0))
+            all_images.append(reconstructed.to(dtype))
 
-        return torch.cat(all_images, dim=0)
+        return all_images
 
 
 def image_collate_fn(batch: list) ->  tuple[tuple[torch.Tensor, ...], tuple[str, ...], torch.Tensor, tuple[tuple[int, int, int, int], ...]]:

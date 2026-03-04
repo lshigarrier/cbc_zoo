@@ -32,13 +32,13 @@ def mask_to_rgba(mask):
 def process_and_save(images, names, outputs, boxes, output_dir, dataset):
     os.makedirs(output_dir, exist_ok=True)
 
-    logits = dataset.stitch(outputs, boxes)
-    masks = torch.argmax(logits, dim=1).cpu().numpy()
-    masks = mask_to_rgba(masks)
+    logits = dataset.stitch(outputs, boxes)  # list((3, H, W))
 
     for b in range(len(images)):
-        mask = masks[b, :, :, :3].astype(np.float32)
-        mask_a = masks[b, :, :, 3:].astype(np.float32)
+        mask = torch.argmax(logits[b], dim=0).cpu().numpy()
+        mask = mask_to_rgba(mask)
+        mask_a = mask[:, :, 3:].astype(np.float32)
+        mask = mask[:, :, :3].astype(np.float32)
         image = images[b].numpy().transpose(1, 2, 0).astype(np.float32) * (1 - mask_a * 0.5) + mask * (mask_a * 0.5)
         image = image.clip(0, 255)
         Image.fromarray(mask.astype(np.uint8)).save(output_dir / f'{names[b]}_mask.png')

@@ -3,7 +3,6 @@ import torch.nn.functional as F
 import torchvision.transforms.v2 as transforms
 import logging
 from pathlib import Path
-from typing import Any
 
 from .utils import log_parameters
 
@@ -25,16 +24,18 @@ class WSSS(torch.nn.Module):
         if verbose:
             log_parameters(self.model, self.logger)
 
-    def forward(self, image: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, Any]:
+    def forward(self, image: torch.Tensor) -> tuple:
         with torch.inference_mode():
             image = self.transform(image)
             # Add a batch dimension if necessary
             if image.ndim == 3:
                 image = image.unsqueeze(0)
+
+            # multi_scale_camsegv3
             b, c, h, w = image.shape
             cam_list = []
             cam_aux_list = []
-            cls_final = 0
+            logits_final = 0
             scales = [1.0, 0.5, 1.5, 0.75, 1.25]
             for s in scales:
                 if s != 1.0:
@@ -42,7 +43,7 @@ class WSSS(torch.nn.Module):
                 else:
                     imgs = image
                 imgs_cat = torch.cat([imgs, imgs.flip(-1)], dim=0)
-                cls_f, cls_a, _, _, _cam, _cam_aux = self.model(imgs_cat)
+                cls_f, _, _, _, _cam, _cam_aux = self.model(imgs_cat)
                 _cam = F.interpolate(_cam, size=(h, w), mode='bilinear', align_corners=False)
                 _cam = torch.max(_cam[:b, ...], _cam[b:, ...].flip(-1))
                 _cam_aux = F.interpolate(_cam_aux, size=(h, w), mode='bilinear', align_corners=False)
@@ -51,7 +52,8 @@ class WSSS(torch.nn.Module):
                 cam_list.append(F.relu(_cam))
                 cam_aux_list.append(F.relu(_cam_aux))
 
-                cls_final += torch.sum(cls_f, dim=0, keepdim=True)
+                logits_final += cls_f[:b]
+                logits_final += cls_f[b:]
 
             cam = torch.sum(torch.stack(cam_list, dim=0), dim=0)
             cam = cam + F.adaptive_max_pool2d(-cam, (1, 1))
@@ -61,4 +63,9 @@ class WSSS(torch.nn.Module):
             cam_aux = cam_aux + F.adaptive_max_pool2d(-cam_aux, (1, 1))
             cam_aux /= F.adaptive_max_pool2d(cam_aux, (1, 1)) + 1e-5
 
-            return cam, cam_aux, cls_final
+            # CAM validation
+            mix_cam_avg = (cam + cam_aux) / 2
+            cls_label_rep = logits_final.unsqueeze(-1).unsqueeze(-1).repeat([1, 1, h, w])
+            valid_cam = cls_label_rep * mix_cam_avg
+
+            return mix_cam_avg, valid_cam, logits_final
