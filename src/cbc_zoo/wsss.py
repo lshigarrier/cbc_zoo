@@ -18,8 +18,12 @@ class WSSS(torch.nn.Module):
             transforms.Normalize([123.675, 116.28, 103.53], [58.395, 57.12, 57.375])
         ])
         base_dir = Path(__file__).parent
-        model_path = base_dir / 'models' / 'CoSA_LCC_7_final.pt'
-        self.invert_activation = True  # set to True if using CoSA_LCC_7, set to False if using CoSA_LCC_5
+        model_path = base_dir / 'models' / 'CoSA_LCC_5.pt'
+        # modify_activation
+        # 0 -> do nothing, should be used for CoSA_LCC_5
+        # 1 -> invert RES and COS activations, can be used for CoSA_LCC_7
+        # 2 -> RES and COS activations set to 0, can be used for CoSA_LCC_7
+        self.modify_activation = 0
         self.model = torch.jit.load(model_path)
         self.model.eval()
         if verbose:
@@ -66,11 +70,19 @@ class WSSS(torch.nn.Module):
 
             # CAM validation
             mix_cam_avg = (cam + cam_aux) / 2
-            if self.invert_activation:
+            if self.modify_activation == 1:
                 # invert activation for RES
                 mix_cam_avg[:, 1] = 1 - mix_cam_avg[:, 1]
                 # invert activation for COS
                 mix_cam_avg[:, 3] = 1 - mix_cam_avg[:, 3]
+            elif self.modify_activation == 2:
+                min_logits = logits_final.amin().item()
+                # RES set to 0
+                mix_cam_avg[:, 1] = 0
+                logits_final[:, 1] = min(min_logits - 1, -1)
+                # COS set to 0
+                mix_cam_avg[:, 3] = 0
+                logits_final[:, 3] = min(min_logits - 1, -1)
             cls_label_rep = logits_final.unsqueeze(-1).unsqueeze(-1).repeat([1, 1, h, w])
             valid_cam = cls_label_rep * mix_cam_avg
 
